@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>AI QuestCreator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <div id="history-panel">
+      <h2>Historique des Quêtes</h2>
+      <div id="history-list"></div>
+    </div>
+    <div id="main-panel">
+      <div class="generator-section">
+        <h1>AI QuestCreator <span id="title-icon">⚔️</span></h1>
+        
+        <div class="theme-selector-group">
+          <label for="theme-selector">Thème de la Quête :</label>
+          <select id="theme-selector">
+            <option value="fantasy">Fantasy</option>
+            <option value="cyberpunk">Cyberpunk</option>
+            <option value="sci-fi">Science-Fiction</option>
+            <option value="horror">Horreur Cosmique</option>
+          </select>
+        </div>
+
+        <textarea id="user-input" placeholder="Décris un concept de quête..."></textarea>
+        <button id="generate-btn">Créer la quête</button>
+        <div id="loading" class="hidden">Création en cours...</div>
+      </div>
+      <div id="quest-display-wrapper">
+        <p class="placeholder">Générez une quête ou sélectionnez-en une dans l'historique.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-overlay" class="modal-hidden">
+    <div id="modal-box">
+      <h3>Raffiner la quête</h3>
+      <p>Donnez une instruction claire pour modifier la quête actuelle.</p>
+      <input type="text" id="refine-input" placeholder="Ex: Rends-la plus sombre, ajoute un choix moral...">
+      <div class="modal-actions">
+        <button id="cancel-refine-btn">Annuler</button>
+        <button id="confirm-refine-btn">Raffiner</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- NOUVELLE FAÇON D'IMPORTER LE MOTEUR IA -->
+  <script type="module" src="script.js"></script>
+</body>
+</html>
