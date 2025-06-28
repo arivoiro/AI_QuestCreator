@@ -4,7 +4,7 @@ Un outil de prototypage rapide pour les narrative designers, utilisant un modèl
 
 ## 🎥 Vidéo de Démonstration
 
-[![Vidéo de Démo]](https://vimeo.com/1097210146/2145fc57c2?share=copy)
+[Vidéo de Démo](https://vimeo.com/1097210146/2145fc57c2?share=copy)
 
 ---
 
