@@ -1,10 +1,4 @@
-// On importe la bibliothèque Web LLM directement
-import { CreateWebWorkerMLCEngine } from "https://esm.run/@mlc-ai/web-llm";
-
-// Modèle d'IA que nous allons utiliser.
-const SELECTED_MODEL = "gemma-2b-it-q4f16_1";
-
-document.addEventListener("DOMContentLoaded", async () => {
+document.addEventListener("DOMContentLoaded", () => {
     // --- ÉLÉMENTS DU DOM ---
     const generateBtn = document.getElementById("generate-btn");
     const loadingDiv = document.getElementById("loading");
@@ -19,24 +13,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const themeSelector = document.getElementById("theme-selector");
     const titleIcon = document.getElementById("title-icon");
 
-    // --- MOTEUR WEB LLM ---
-    const engine = await CreateWebWorkerMLCEngine(
-        new Worker(
-            new URL('./worker.js', import.meta.url),
-            { type: 'module' }
-        ),
-        SELECTED_MODEL,
-        { 
-            initProgressCallback: (progress) => {
-                loadingDiv.textContent = `Chargement du moteur IA... ${Math.floor(progress.progress * 100)}%`;
-                loadingDiv.classList.remove('hidden');
-                generateBtn.disabled = true;
-            }
-        }
-    );
-    loadingDiv.classList.add('hidden');
-    generateBtn.disabled = false;
-    
     // --- DONNÉES DE THÈME ---
     const themeData = {
         fantasy: {
@@ -73,6 +49,26 @@ document.addEventListener("DOMContentLoaded", async () => {
         renderHistory();
     };
 
+    // --- FONCTION UTILITAIRE DE NETTOYAGE ---
+    const extractJson = (rawText) => {
+        const startIndex = rawText.indexOf('{');
+        const endIndex = rawText.lastIndexOf('}');
+        if (startIndex === -1 || endIndex === -1) {
+            throw new Error("Aucun bloc JSON n'a été trouvé dans la réponse de l'IA.");
+        }
+        return rawText.substring(startIndex, endIndex + 1);
+    };
+
+    // --- UTILITAIRE POUR L'ÉDITION ---
+    const setNestedValue = (obj, path, value) => {
+        const keys = path.replace(/\[(\d+)\]/g, '.$1').split('.');
+        let current = obj;
+        for (let i = 0; i < keys.length - 1; i++) {
+            current = current[keys[i]];
+        }
+        current[keys[keys.length - 1]] = value;
+    };
+
     // --- AFFICHAGE ---
     const renderHistory = () => {
         historyList.innerHTML = "";
@@ -82,7 +78,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             const item = document.createElement("div");
             item.className = "history-item";
             item.dataset.id = quest.id;
-            item.textContent = quest.titre; 
+            item.textContent = quest.titre;
             if (quest.id === activeQuestId) item.classList.add("active");
             const deleteBtn = document.createElement("button");
             deleteBtn.className = "delete-btn";
@@ -108,27 +104,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         const questCard = document.createElement('div');
         questCard.id = 'quest-card';
 
-        const dialogueHTML = (quest.dialogues || []).map(dialogueLine => `<li><em>"${dialogueLine}"</em></li>`).join('');
-        
-        const pnjHTML = (quest.pnj || []).map(p => {
-            let pnjText = p;
-            if (typeof p === 'object' && p !== null) {
-                pnjText = p.nom ? `${p.nom} - ${p.role || ''}` : JSON.stringify(p);
-            }
-            return `<li>${pnjText}</li>`;
-        }).join('');
-
-        const objectifsHTML = (quest.objectifs || []).map(o => `<li>${o}</li>`).join('');
+        const dialogueHTML = (quest.dialogues || []).map((line, index) => `<li class="editable-field" data-path="dialogues[${index}]"><em>"${line}"</em></li>`).join('');
+        const pnjHTML = (quest.pnj || []).map((pnj, index) => `<li class="editable-field" data-path="pnj[${index}]">${pnj}</li>`).join('');
+        const objectifsHTML = (quest.objectifs || []).map((obj, index) => `<li class="editable-field" data-path="objectifs[${index}]">${obj}</li>`).join('');
 
         questCard.innerHTML = `
-            <h2 class="quest-title">${quest.titre || "Titre non généré"}</h2>
+            <h2 class="quest-title editable-field" data-path="titre">${quest.titre || "Titre non généré"}</h2>
             <hr class="separator" />
-            <strong>📝 Résumé :</strong><p>${quest.résumé || "Aucun résumé."}</p>
+            <strong>📝 Résumé :</strong><p class="editable-field" data-path="résumé">${quest.résumé || "Aucun résumé."}</p>
             <strong>🎯 Objectifs :</strong><ul>${objectifsHTML}</ul>
             <strong>🎭 PNJ Clés :</strong><ul>${pnjHTML}</ul>
-            <strong>🔍 Rebondissement :</strong><p>${quest.twist || "Aucun rebondissement."}</p>
+            <strong>🔍 Rebondissement :</strong><p class="editable-field" data-path="twist">${quest.twist || "Aucun rebondissement."}</p>
             <strong>🗣️ Lignes de Dialogue Clés :</strong><ul>${dialogueHTML}</ul>
-            <strong>🎁 Récompense :</strong><p>${quest.récompense || "Aucune récompense."}</p>
+            <strong>🎁 Récompense :</strong><p class="editable-field" data-path="récompense">${quest.récompense || "Aucune récompense."}</p>
         `;
 
         const actionsSidebar = document.createElement('div');
@@ -143,9 +131,70 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         actionsSidebar.querySelector('#export-btn').addEventListener('click', () => handleExportClick(id));
         actionsSidebar.querySelector('#refine-btn').addEventListener('click', () => openRefineModal(id));
-        
+
         activeQuestId = id;
         renderHistory();
+    };
+
+    // --- GESTION DE L'ÉDITION MANUELLE ---
+    const handleEdit = (event) => {
+        const field = event.target.closest('.editable-field');
+        if (!field || document.querySelector('.is-editing')) return;
+
+        field.classList.add('is-editing');
+        field.setAttribute('contenteditable', 'true');
+        field.focus();
+        
+        const range = document.createRange();
+        const sel = window.getSelection();
+        const { clientX, clientY } = event;
+        if (document.caretPositionFromPoint) {
+            const pos = document.caretPositionFromPoint(clientX, clientY);
+            if(pos) range.setStart(pos.offsetNode, pos.offset);
+        } else if (document.caretRangeFromPoint) {
+            const pos = document.caretRangeFromPoint(clientX, clientY);
+            if(pos) range.setStart(pos.startContainer, pos.startOffset);
+        }
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+
+        const onSave = () => {
+            field.classList.remove('is-editing');
+            field.removeAttribute('contenteditable');
+            const questId = activeQuestId;
+            const quest = quests.find(q => q.id === questId);
+            const path = field.dataset.path;
+            const newValue = field.textContent.replace(/"/g, '');
+            if (quest && path) {
+                setNestedValue(quest, path, newValue);
+                saveQuests();
+                if(path === 'titre') {
+                    renderHistory();
+                }
+            }
+            field.removeEventListener('blur', onSave);
+            field.removeEventListener('keydown', onKeyDown);
+        };
+
+        const onKeyDown = (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                field.blur();
+            } else if (e.key === 'Escape') {
+                const quest = quests.find(q => q.id === activeQuestId);
+                const pathParts = path.replace(/\[(\d+)\]/g, '.$1').split('.');
+                let originalValue = quest;
+                for (const part of pathParts) {
+                    originalValue = originalValue ? originalValue[part] : '';
+                }
+                field.textContent = originalValue || '';
+                field.blur();
+            }
+        };
+
+        field.addEventListener('blur', onSave);
+        field.addEventListener('keydown', onKeyDown);
     };
     
     // --- GESTION DE LA MODALE ET DU THÈME ---
@@ -193,14 +242,24 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const selectedTheme = quest.theme || 'fantasy';
         const themeInfo = themeData[selectedTheme];
-
-        const refinePrompt = `INSTRUCTION: Tu es un ${themeInfo.instruction}. Ta mission est de modifier la quête en JSON ci-dessous en suivant l'instruction de l'utilisateur. Tu dois respecter le thème et le formatage.\n\nQUÊTE ORIGINALE:\n${JSON.stringify(quest, null, 2)}\n\nINSTRUCTION DE RAFFINEMENT: "${refinementInstruction}"\n\nRENVOIE UNIQUEMENT LA NOUVELLE VERSION COMPLÈTE DU JSON.`;
+        const refinePrompt = `INSTRUCTION: Tu es un ${themeInfo.instruction}. Ta mission est de modifier la quête en JSON ci-dessous en suivant l'instruction de l'utilisateur. Tu dois respecter le thème et le formatage.
+        
+        QUÊTE ORIGINALE: ${JSON.stringify(quest, null, 2)}
+        
+        INSTRUCTION DE RAFFINEMENT: "${refinementInstruction}"
+        
+        RENVOIE UNIQUEMENT LA NOUVELLE VERSION COMPLÈTE DU JSON.`;
         
         try {
-            const reply = await engine.chat.completions.create({
-                messages: [{ role: "user", content: refinePrompt }],
+            const res = await fetch("http://localhost:1234/v1/chat/completions", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model: "local-model", messages: [{ role: "user", content: refinePrompt }], temperature: 0.8, stream: false })
             });
-            const refinedQuestData = JSON.parse(reply.choices[0].message.content);
+            if (!res.ok) throw new Error(`Erreur serveur: ${res.status}`);
+            const data = await res.json();
+            const rawReply = data.choices[0].message.content;
+            const jsonString = extractJson(rawReply);
+            const refinedQuestData = JSON.parse(jsonString);
             const questIndex = quests.findIndex(q => q.id === id);
             if (questIndex !== -1) {
                 refinedQuestData.id = quest.id;
@@ -210,13 +269,14 @@ document.addEventListener("DOMContentLoaded", async () => {
                 displayQuest(id);
             }
         } catch(err) { 
-            alert(`Erreur de raffinage: ${err.message}`); 
+            alert(`Erreur lors du raffinage: ${err.message}`); 
         } finally {
             loadingDiv.classList.add("hidden");
             generateBtn.disabled = false;
         }
     };
 
+    // --- FONCTION DE GÉNÉRATION ---
     const handleGenerateClick = async () => {
         const concept = inputElement.value.trim();
         if (!concept) return;
@@ -226,37 +286,47 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const selectedTheme = themeSelector.value;
         const themeInfo = themeData[selectedTheme];
-
         const questPrompt = `
           INSTRUCTION: Tu es un ${themeInfo.instruction}.
           Ta mission la plus importante est de prendre le concept de l'utilisateur et de le RÉINTERPRÉTER COMPLÈTEMENT à travers le prisme de ton thème. Priorise toujours le thème sur le concept littéral.
           EXEMPLE DE RÉINTERPRÉTATION: ${themeInfo.reinterpretation_example}.
 
-          Génère une quête détaillée en suivant ce modèle. TA RÉPONSE DOIT ÊTRE UNIQUEMENT UN BLOC DE CODE JSON VALIDE.
+          Génère une quête détaillée en suivant ce modèle. TA RÉPONSE DOIT ÊTRE UNIQUEMENT UN BLOC DE CODE JSON VALIDE. N'utilise pas de formatage étrange, notamment des "/".
           
           Format JSON attendu (RÈGLE IMPORTANTE: les chaînes de caractères dans la liste "pnj" NE DOIVENT PAS contenir de tiret de liste):
           {
-            "titre": "Un titre de quête court et percutant.",
-            "résumé": "Un résumé narratif immersif.",
-            "objectifs": ["Une liste d'objectifs clairs."],
-            "pnj": ["Elara, la gardienne du temple", "Kael, le marchand méfiant"],
-            "dialogues": [
-                "Une première ligne de dialogue clé.",
-                "Une seconde ligne de dialogue clé."
-            ],
-            "twist": "Un rebondissement inattendu.",
-            "récompense": "Une récompense thématique."
+            "titre": "Titre de quête court et percutant, unique au concept.",
+            "résumé": "Résumé narratif immersif de la quête, basé sur le concept.",
+            "objectifs": ["Un objectif clair et mesurable, pertinent pour la quête."],
+            "pnj": ["Nom du PNJ, rôle distinctif lié à la quête."],
+            "dialogues": ["Ligne de dialogue clé, pertinente pour le récit ou un PNJ (si tu veux inclure le nom du PNJ, intègre-le dans cette même chaîne)."],
+            "twist": "Rebondissement inattendu et pertinent pour la quête.",
+            "récompense": "Récompense thématique et attrayante pour le joueur."
           }
+
+          INSTRUCTIONS IMPORTANTES:
+          - RÈGLE CRUCIALE: Pour les listes "objectifs", "pnj" et "dialogues", CHAQUE ÉLÉMENT DE LA LISTE DOIT ÊTRE une chaîne de caractères simple (string). NE GÉNÈRE JAMAIS d'objets JSON imbriqués ({}) ou d'autres structures complexes à l'intérieur de ces listes.
+          - N'utilise PAS les exemples de noms génériques ou de descriptions du format.
+          - Génère des NOMS et des RÔLES de PNJ entièrement NOUVEAUX et UNIQUES, adaptés au 'CONCEPT UTILISATEUR'.
+          - Varie les rôles des PNJ pour éviter les répétitions.
+          - Le nombre d'éléments dans les listes ("objectifs", "pnj", "dialogues") doit être VARIABLE et adapté à la complexité et à la richesse du 'CONCEPT UTILISATEUR'. Ne te limite pas à un seul élément si plusieurs sont nécessaires ou appropriés (généralement entre 1 et 4 éléments par liste, selon la pertinence).
+          - Chaque champ JSON doit être rempli avec du contenu original, détaillé et directement inspiré du 'CONCEPT UTILISATEUR'.
 
           CONCEPT UTILISATEUR À RÉINTERPRÉTER: "${concept}"
         `;
 
         try {
-            const reply = await engine.chat.completions.create({
-                messages: [{ "role": "user", "content": questPrompt }]
+            const res = await fetch("http://localhost:1234/v1/chat/completions", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model: "local-model", messages: [{ role: "user", content: questPrompt }], temperature: 0.8, stream: false })
             });
-            const newQuest = JSON.parse(reply.choices[0].message.content);
+            if (!res.ok) throw new Error(`Erreur du serveur: ${res.status}`);
+            const data = await res.json();
+            const rawReply = data.choices[0].message.content;
+            const jsonString = extractJson(rawReply);
+            const newQuest = JSON.parse(jsonString);
             
+            if (!newQuest.titre) newQuest.titre = concept;
             newQuest.id = Date.now();
             newQuest.theme = selectedTheme;
             quests.unshift(newQuest);
@@ -265,11 +335,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             displayQuest(newQuest.id);
             inputElement.value = "";
         } catch (err) {
-            if (err instanceof SyntaxError) {
-                alert("Erreur: L'IA a renvoyé un JSON invalide. Veuillez réessayer.");
-            } else {
-                alert(`Une erreur est survenue: ${err.message}`);
-            }
+            alert(`Une erreur est survenue: ${err.message}`);
         } finally {
             loadingDiv.classList.add("hidden");
             generateBtn.disabled = false;
@@ -305,12 +371,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     // --- ÉCOUTEURS ET DÉMARRAGE ---
     generateBtn.addEventListener("click", handleGenerateClick);
     historyList.addEventListener("click", handleHistoryClick);
+    questDisplayWrapper.addEventListener('click', handleEdit);
     cancelRefineBtn.addEventListener('click', closeRefineModal);
     confirmRefineBtn.addEventListener('click', executeRefinement);
     modalOverlay.addEventListener('click', (e) => {
         if (e.target === modalOverlay) closeRefineModal();
     });
-themeSelector.addEventListener('change', updateThemeIcon);
+    themeSelector.addEventListener('change', updateThemeIcon);
     
     loadQuests();
     displayQuest(null);

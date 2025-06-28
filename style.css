@@ -264,7 +264,7 @@ button#generate-btn:disabled {
 }
 
 #quest-card ul {
-  list-style-type: none;
+  list-style-type: disc;
   padding-left: 20px;
   margin: 0;
 }
@@ -273,7 +273,7 @@ button#generate-btn:disabled {
   margin: 0;
 }
 
-/* --- NOUVEAUX STYLES POUR L'ÉDITION --- */
+/* --- ÉDITION DE TEXTE --- */
 .editable-field {
   position: relative;
   cursor: pointer;
@@ -301,7 +301,6 @@ button#generate-btn:disabled {
   outline: 2px solid #ffd700;
   cursor: text;
 }
-/* ------------------------------------ */
 
 .dialogue-turn {
   background-color: #2c2c2c;
