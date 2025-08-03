@@ -1,10 +1,10 @@
-# AI QuestCreator ⚔️
+c# AI QuestCreator ⚔️
 
 Un outil de prototypage rapide pour les narrative designers, utilisant un modèle de langage local pour générer des quêtes de jeu vidéo riches et thématiques.
 
 ## 🎥 Vidéo de Démonstration
 
-[Vidéo de Démo](https://vimeo.com/1097210146/2145fc57c2?share=copy)
+[Vidéo de Démo](https://youtu.be/NW4dkyE-Nq4?si=QtaWCPjd0gv2OPul)
 
 ---
 
